@@ -1,0 +1,39 @@
+# OS files
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+~/Library/Logs/mac-cleanup.log
+
+# Temporary files
+/tmp/
+*.tmp
+.tmp
+
+# Trash
+.Trash
+~/.Trash
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# Build artifacts
+*.o
+*.a
+*.so
+*.dylib
+
+# Package managers
+node_modules/
+.npm/
+venv/
+*.egg-info/
+
+# Project-specific
+.mac-cleanup.conf
+/tmp/

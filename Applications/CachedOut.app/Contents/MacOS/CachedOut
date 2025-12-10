@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+
+################################################################################
+# Cachéd Out - GUI Wrapper for mac-cleanup.sh
+# Provides interactive dialogs for cleanup options and progress
+################################################################################
+
+set -euo pipefail
+
+# Path to the embedded cleanup script
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../Resources" && pwd)"
+readonly CLEANUP_SCRIPT="${SCRIPT_DIR}/mac-cleanup.sh"
+
+################################################################################
+# AppleScript Dialogs
+################################################################################
+
+# Display welcome dialog
+show_welcome_dialog() {
+    osascript << 'APPLESCRIPT'
+tell application "System Events"
+    activate
+    set result to display dialog "Welcome to Cachéd Out" & return & return & "This utility will safely clean up application caches, temporary files, and browser caches." & return & return & "Your files will be moved to Trash for recovery if needed." buttons {"Cancel", "Preview First", "Run Cleanup"} default button 2 with icon caution
+    return button returned of result
+end tell
+APPLESCRIPT
+}
+
+# Show cleanup summary
+show_summary_dialog() {
+    local summary="$1"
+    printf '%s\n' "$summary" | osascript << 'APPLESCRIPT'
+on run argv
+    set summary to item 1 of argv
+    tell application "System Events"
+        activate
+        set result to display dialog "Cleanup Summary" & return & return & summary & return & return & "Proceed with cleanup?" buttons {"Cancel", "Run Cleanup"} default button 2 with icon caution
+        return button returned of result
+    end tell
+end run
+APPLESCRIPT
+}
+
+# Show results dialog
+show_results_dialog() {
+    local results="$1"
+    printf '%s\n' "$results" | osascript << 'APPLESCRIPT'
+on run argv
+    set results to item 1 of argv
+    tell application "System Events"
+        activate
+        display dialog "Cleanup Complete" & return & return & results buttons {"Close"} default button 1 with icon note
+    end tell
+end run
+APPLESCRIPT
+}
+
+# Show error dialog
+show_error_dialog() {
+    local error_msg="$1"
+    printf '%s\n' "$error_msg" | osascript << 'APPLESCRIPT'
+on run argv
+    set error_msg to item 1 of argv
+    tell application "System Events"
+        activate
+        display dialog "Error" & return & return & error_msg buttons {"Close"} default button 1 with icon caution
+    end tell
+end run
+APPLESCRIPT
+}
+
+################################################################################
+# Main Workflow
+################################################################################
+
+main() {
+    # Verify cleanup script exists
+    if [[ ! -f "$CLEANUP_SCRIPT" ]]; then
+        show_error_dialog "Cleanup script not found at $CLEANUP_SCRIPT"
+        exit 1
+    fi
+
+    # Check if cleanup script is executable
+    if [[ ! -x "$CLEANUP_SCRIPT" ]]; then
+        chmod +x "$CLEANUP_SCRIPT"
+    fi
+
+    # Show welcome dialog
+    local welcome_choice
+    welcome_choice=$(show_welcome_dialog)
+
+    if [[ "$welcome_choice" == "Cancel" ]]; then
+        exit 0
+    fi
+
+    # Build cleanup command (user-level only, always backup)
+    local -a cleanup_args=("$CLEANUP_SCRIPT" "--backup" "--verbose")
+
+    # Generate summary using dry-run
+    local summary_output
+    summary_output=$("${cleanup_args[@]}" --dry-run --yes 2>&1 | tail -50)
+
+    # Show summary and get confirmation
+    local summary_choice
+    summary_choice=$(show_summary_dialog "$summary_output")
+
+    if [[ "$summary_choice" == "Cancel" ]]; then
+        exit 0
+    fi
+
+    # Run actual cleanup and capture output
+    local cleanup_output
+    cleanup_output=$("${cleanup_args[@]}" --yes 2>&1)
+
+    # Extract stats from output
+    local files_cleaned=$(echo "$cleanup_output" | grep -c "Removed:" || echo "0")
+    local space_freed=$(echo "$cleanup_output" | grep "Removed:" | sed -E 's/.*\(([0-9]+) bytes\).*/\1/' | awk '{sum += $1} END {print int(sum/1024/1024)}' || echo "0")
+
+    # Show results with summary
+    local results="Cleanup completed successfully!\\n\\nFiles processed: $files_cleaned\\nDisk space freed: ${space_freed} MB\\n\\nAll files have been moved to Trash for recovery if needed."
+    show_results_dialog "$results"
+}
+
+# Run main
+main "$@"
